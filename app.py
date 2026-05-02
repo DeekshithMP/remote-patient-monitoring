@@ -1,38 +1,79 @@
 import streamlit as st
 import pandas as pd
-from simulator import generate_vitals, generate_abnormal_vitals
+import matplotlib.pyplot as plt
 from anomaly import detect_anomaly
-import time
 
-st.title("🏥 Remote Patient Monitoring")
+st.set_page_config(page_title="Patient Monitoring", layout="wide")
 
-data_log = []
+st.title("🏥 Remote Patient Monitoring Dashboard")
 
-run = st.checkbox("Start Monitoring")
+# ---------------- SESSION STATE ---------------- #
+if "data_log" not in st.session_state:
+    st.session_state.data_log = []
 
-while run:
-    if st.button("Generate Abnormal Data"):
-        vitals = generate_abnormal_vitals()
-    else:
-        vitals = generate_vitals()
+# ---------------- SIDEBAR INPUT ---------------- #
+st.sidebar.header("Enter Patient Vitals")
+
+heart_rate = st.sidebar.number_input("Heart Rate (bpm)", 30, 200, 75)
+spo2 = st.sidebar.number_input("SpO2 (%)", 70, 100, 98)
+temperature = st.sidebar.number_input("Temperature (°C)", 30.0, 45.0, 36.8)
+
+if st.sidebar.button("Add Reading"):
+    vitals = {
+        "heart_rate": heart_rate,
+        "spo2": spo2,
+        "temperature": temperature
+    }
 
     status = detect_anomaly(vitals)
-
     vitals["status"] = status
-    data_log.append(vitals)
 
-    df = pd.DataFrame(data_log)
+    st.session_state.data_log.append(vitals)
 
-    st.write("### Latest Vitals")
-    st.write(vitals)
+# ---------------- DATAFRAME ---------------- #
+if st.session_state.data_log:
+    df = pd.DataFrame(st.session_state.data_log)
 
-    st.write("### Monitoring Data")
-    st.dataframe(df)
+    # ---------------- METRICS ---------------- #
+    col1, col2, col3 = st.columns(3)
 
-    if status == "Anomaly":
-        st.error("⚠️ Anomaly Detected!")
+    col1.metric("Total Readings", len(df))
+    col2.metric("Anomalies", (df["status"] == "Anomaly").sum())
+    col3.metric("Normal", (df["status"] == "Normal").sum())
+
+    st.divider()
+
+    # ---------------- LATEST STATUS ---------------- #
+    latest = df.iloc[-1]
+
+    st.subheader("Latest Reading")
+    st.write(latest)
+
+    if latest["status"] == "Anomaly":
+        st.error("⚠️ Critical Condition Detected")
     else:
-        st.success("✅ Normal")
+        st.success("✅ Patient Stable")
 
-    time.sleep(2)
-    st.rerun()
+    st.divider()
+
+    # ---------------- CHARTS ---------------- #
+    st.subheader("Vitals Trend")
+
+    fig, ax = plt.subplots()
+    ax.plot(df["heart_rate"], label="Heart Rate")
+    ax.plot(df["spo2"], label="SpO2")
+    ax.plot(df["temperature"], label="Temperature")
+    ax.legend()
+
+    st.pyplot(fig)
+
+    # ---------------- DATA TABLE ---------------- #
+    st.subheader("Full Monitoring Data")
+
+    def highlight_anomaly(row):
+        return ["background-color: #ffcccc" if row.status == "Anomaly" else "" for _ in row]
+
+    st.dataframe(df.style.apply(highlight_anomaly, axis=1))
+
+else:
+    st.info("Enter patient vitals from the sidebar to begin monitoring.")
